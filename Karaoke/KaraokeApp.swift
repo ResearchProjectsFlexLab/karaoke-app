@@ -17,6 +17,7 @@ struct KaraokeApp: App {
             ContentView()
                 .environment(appModel)
         }
+        .defaultSize(width: 760, height: 640)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
