@@ -27,7 +27,7 @@ struct ImmersiveView: View {
             animation = content.subscribe(to: SceneEvents.Update.self) { event in
                 time += Float(event.deltaTime)
                 session.refresh(at: .now)
-                StageAnimator.step(rig, time: time, isPlaying: session.phase == .playing)
+                StageAnimator.step(rig, time: time, phase: session.phase)
             }
         }
     }
@@ -36,7 +36,11 @@ struct ImmersiveView: View {
 /// Per-frame motion for the stage: drifting stars, twinkling, swaying beams and a pulsing dance floor.
 @MainActor
 enum StageAnimator {
-    static func step(_ rig: StageRig, time: Float, isPlaying: Bool) {
+    static func step(_ rig: StageRig, time: Float, phase: KaraokeSession.Phase) {
+        let isPlaying = phase == .playing
+        // Keep the scene calm during baseline and recovery: no beams, no pulsing floor.
+        let isResting = phase == .baseline || phase == .recovery
+
         rig.starField.orientation = simd_quatf(angle: time * 0.004, axis: [0, 1, 0])
 
         // Twinkle a rolling subset of stars each frame.
@@ -49,6 +53,8 @@ enum StageAnimator {
         let speed: Float = isPlaying ? 1.4 : 0.5
         let swing: Float = isPlaying ? 0.45 : 0.2
         for (index, beam) in rig.beams.enumerated() {
+            beam.isEnabled = !isResting
+            guard !isResting else { continue }
             let offset = Float(index) * 1.3
             let roll = sin(time * speed + offset) * swing
             let pitch = -0.12 + cos(time * speed * 0.7 + offset) * swing * 0.5
@@ -57,7 +63,7 @@ enum StageAnimator {
 
         let beat: Float = isPlaying ? 4 : 1.2
         for (index, tile) in rig.tiles.enumerated() {
-            let lift = max(0, sin(time * beat + Float(index) * 0.9))
+            let lift = isResting ? 0 : max(0, sin(time * beat + Float(index) * 0.9))
             tile.position.y = 0.006 + (isPlaying ? lift * 0.012 : 0)
             tile.scale = SIMD3(1, 1 + lift * 2, 1)
         }
@@ -79,13 +85,15 @@ struct LyricBoard: View {
 
             switch session.phase {
             case .ready:
-                Text("Ready when you are")
-                    .font(.system(size: 40, weight: .medium, design: .serif))
-                Text("Pick a set length, then press Start.")
-                    .font(.title3)
-                    .foregroundStyle(.secondary)
+                Text("How this works")
+                    .font(.system(size: 36, weight: .medium, design: .serif))
+                InstructionsList(session: session)
                 SetLengthPicker(session: session)
                 SavedLogBadge(session: session)
+            case .baseline, .recovery:
+                RestPanel(session: session)
+            case .readyToSing:
+                ReadyToSingPanel(session: session)
             case .playing:
                 Text(session.currentLine?.text ?? "")
                     .font(.system(size: 44, weight: .semibold, design: .serif))
@@ -108,14 +116,24 @@ struct LyricBoard: View {
             }
 
             HStack(spacing: 16) {
-                if session.phase == .playing {
-                    Button(action: { session.stop() }) {
-                        Label("Stop", systemImage: "stop.fill")
-                            .frame(minWidth: 140)
-                    }
-                } else {
+                switch session.phase {
+                case .ready, .finished:
                     Button(action: { session.start() }) {
-                        Label(session.phase == .finished ? "Sing again" : "Start", systemImage: "play.fill")
+                        Label(session.phase == .finished ? "New session" : "Start baseline", systemImage: "leaf.fill")
+                            .frame(minWidth: 180)
+                    }
+                case .readyToSing:
+                    Button(action: { session.startSinging() }) {
+                        Label("Start karaoke", systemImage: "music.mic")
+                            .frame(minWidth: 180)
+                    }
+                    Button(action: { session.stop() }) {
+                        Label("End session", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(.bordered)
+                case .baseline, .playing, .recovery:
+                    Button(action: { session.stop() }) {
+                        Label(session.phase == .playing ? "Stop" : "End session", systemImage: "stop.fill")
                             .frame(minWidth: 140)
                     }
                 }
@@ -129,7 +147,7 @@ struct LyricBoard: View {
             .controlSize(.extraLarge)
         }
         .padding(40)
-        .frame(width: 720, height: 520)
+        .frame(width: 760, height: 640)
         .glassBackgroundEffect()
     }
 

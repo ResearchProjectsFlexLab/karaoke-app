@@ -1,8 +1,17 @@
 # Karaoke (Apple Vision Pro)
 
-A visionOS karaoke app: pick a 1, 3 or 5 minute set, press **Start**, and sing
-on an immersive night-time stage while the lyrics play on a board above it.
-Every song is public domain and played as simple tones; nothing is recorded.
+A visionOS karaoke app for a study session on an immersive night-time stage.
+Every song is public domain and played as simple tones; no audio is recorded.
+
+## How a session runs
+
+1. **Instructions:** pick a 1, 3 or 5 minute set and read the steps, then press **Start baseline**.
+2. **Baseline (1 min):** sit still and breathe normally. The stage stays dim and calm.
+3. **Start karaoke:** when the baseline ends, a separate button starts the songs.
+4. **Karaoke:** sing along with the lyrics on the board.
+5. **Recovery (1 min):** starts automatically after the last song. Sit back and relax.
+
+**End session** stops at any point; whatever was recorded is still saved.
 
 ## Run it on a Vision Pro
 
@@ -36,8 +45,10 @@ and shows **Log saved** with the file name. To find the logs on the Vision Pro, 
 karaoke-log_2026-11-07_16-56-35.txt
 ```
 
-Each line has a timestamp to the millisecond: `session_start`, `song_start <title>`,
-`lyric_line <n> <text>`, and `song_finished` or `session_stop`.
+Each line has a timestamp to the millisecond, in this order: `session_start`, `set_length`,
+`baseline_start`, `baseline_end`, `karaoke_start`, `song_start <title>`, `lyric_line <n> <text>`,
+`song_finished`, `recovery_start`, `recovery_end`, `session_end`. If the session is ended early,
+the log has `session_stop during <phase>` instead.
 
 To copy logs to the Mac, share them from the Files app with AirDrop, or open
 **Xcode › Window › Devices and Simulators**, pick the Vision Pro, select **Karaoke**,

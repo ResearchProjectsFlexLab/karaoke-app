@@ -26,6 +26,10 @@ struct ContentView: View {
                 switch session.phase {
                 case .ready:
                     ready
+                case .baseline, .recovery:
+                    rest
+                case .readyToSing:
+                    readyToSing
                 case .playing:
                     stage
                 case .finished:
@@ -74,14 +78,12 @@ struct ContentView: View {
     private var ready: some View {
         VStack(spacing: 28) {
             Spacer(minLength: 0)
-            Text("How long do you want to sing?")
+            Text("How this works")
                 .font(.system(size: 34, weight: .medium, design: .serif))
-                .multilineTextAlignment(.center)
+            InstructionsList(session: session)
             SetLengthPicker(session: session)
-            Text(session.song.detail)
-                .foregroundStyle(.secondary)
             Button(action: startShow) {
-                Label("Start", systemImage: "play.fill")
+                Label("Start baseline", systemImage: "leaf.fill")
                     .frame(minWidth: 180)
             }
             .buttonStyle(.borderedProminent)
@@ -90,6 +92,41 @@ struct ContentView: View {
             SavedLogBadge(session: session)
             exportStatusText
             Spacer(minLength: 0)
+        }
+    }
+
+    private var readyToSing: some View {
+        VStack(spacing: 28) {
+            Spacer(minLength: 0)
+            ReadyToSingPanel(session: session)
+            Button(action: { session.startSinging() }) {
+                Label("Start karaoke", systemImage: "music.mic")
+                    .frame(minWidth: 200)
+            }
+            .buttonStyle(.borderedProminent)
+            .buttonBorderShape(.capsule)
+            .controlSize(.extraLarge)
+            Spacer(minLength: 0)
+            Button(action: { session.stop() }) {
+                Label("End session", systemImage: "stop.fill")
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+        }
+    }
+
+    private var rest: some View {
+        VStack(spacing: 28) {
+            Spacer(minLength: 0)
+            RestPanel(session: session)
+            Spacer(minLength: 0)
+            Button(action: { session.stop() }) {
+                Label("End session", systemImage: "stop.fill")
+                    .frame(minWidth: 160)
+            }
+            .buttonStyle(.bordered)
+            .buttonBorderShape(.capsule)
+            .controlSize(.large)
         }
     }
 
@@ -136,7 +173,7 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
             SetLengthPicker(session: session)
             Button(action: startShow) {
-                Label("Play again", systemImage: "play.fill")
+                Label("New session", systemImage: "leaf.fill")
                     .frame(minWidth: 180)
             }
             .buttonStyle(.borderedProminent)
@@ -157,7 +194,7 @@ struct ContentView: View {
         }
     }
 
-    /// Opens the immersive stage (if it isn't already) and starts the song.
+    /// Opens the immersive stage (if it isn't already) and starts the baseline.
     private func startShow() {
         Task { @MainActor in
             if appModel.immersiveSpaceState == .closed {
@@ -223,6 +260,92 @@ struct SavedLogBadge: View {
             Label("Couldn't save log: \(error)", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
                 .foregroundStyle(.orange)
+        }
+    }
+}
+
+/// The quiet baseline / recovery screen: what to do, and how long is left.
+struct RestPanel: View {
+    let session: KaraokeSession
+
+    private var isBaseline: Bool { session.phase == .baseline }
+    private var total: TimeInterval { isBaseline ? session.baselineDuration : session.recoveryDuration }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text(isBaseline ? "Baseline" : "Recovery")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+            Text(isBaseline ? "Sit comfortably and relax" : "Well sung. Now relax")
+                .font(.system(size: 36, weight: .medium, design: .serif))
+                .multilineTextAlignment(.center)
+            Text(isBaseline
+                 ? "Breathe normally and stay still. The songs begin when the timer ends."
+                 : "Sit back, breathe normally and stay still until the timer ends.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+            Text(Self.clock(session.restRemaining))
+                .font(.system(size: 56, weight: .light, design: .rounded).monospacedDigit())
+                .contentTransition(.numericText(countsDown: true))
+                .animation(.default, value: Int(session.restRemaining.rounded(.up)))
+            ProgressView(value: total - session.restRemaining, total: max(total, 1))
+                .frame(maxWidth: 360)
+                .accessibilityLabel(isBaseline ? "Baseline progress" : "Recovery progress")
+        }
+    }
+
+    static func clock(_ seconds: TimeInterval) -> String {
+        let whole = Int(seconds.rounded(.up))
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+}
+
+/// The three steps of a session, shown before the baseline starts.
+struct InstructionsList: View {
+    let session: KaraokeSession
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            step(1, "Baseline · 1 min", "Sit comfortably, stay still and breathe normally. No singing yet.")
+            step(2, "Karaoke · \(session.length.label)", "When the baseline ends, press Start karaoke and sing along with the lyrics.")
+            step(3, "Recovery · 1 min", "Starts by itself after the last song. Sit back, relax and breathe normally.")
+        }
+        .frame(maxWidth: 520, alignment: .leading)
+    }
+
+    private func step(_ number: Int, _ title: String, _ detail: String) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            Text("\(number)")
+                .font(.headline.monospacedDigit())
+                .frame(width: 32, height: 32)
+                .background(.thinMaterial, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.headline)
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// Shown between the baseline and the karaoke.
+struct ReadyToSingPanel: View {
+    let session: KaraokeSession
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Label("Baseline complete", systemImage: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.green)
+            Text("Ready to sing?")
+                .font(.system(size: 36, weight: .medium, design: .serif))
+            Text("\(session.song.detail). Press Start karaoke when you're ready. Recovery follows right after the last song.")
+                .font(.title3)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
     }
 }
