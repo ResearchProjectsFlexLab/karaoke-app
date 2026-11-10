@@ -10,10 +10,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct ContentView: View {
-    @State private var session = KaraokeSession()
+    @Environment(AppModel.self) private var appModel
+    @Environment(\.openImmersiveSpace) private var openImmersiveSpace
     @State private var exportText = ""
     @State private var isExporting = false
     @State private var exportStatus: String?
+
+    private var session: KaraokeSession { appModel.session }
 
     private let clock = Timer.publish(every: 0.05, tolerance: 0.02, on: .main, in: .common).autoconnect()
 
@@ -34,6 +37,9 @@ struct ContentView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .navigationTitle("Karaoke")
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    ToggleImmersiveSpaceButton()
+                }
                 ToolbarItem(placement: .primaryAction) {
                     Button(action: beginExport) {
                         Label("Save", systemImage: "square.and.arrow.down")
@@ -68,18 +74,20 @@ struct ContentView: View {
     private var ready: some View {
         VStack(spacing: 28) {
             Spacer(minLength: 0)
-            Text(session.song.title)
+            Text("How long do you want to sing?")
                 .font(.system(size: 34, weight: .medium, design: .serif))
                 .multilineTextAlignment(.center)
+            SetLengthPicker(session: session)
             Text(session.song.detail)
                 .foregroundStyle(.secondary)
-            Button(action: { session.start() }) {
-                Label("Play", systemImage: "play.fill")
+            Button(action: startShow) {
+                Label("Start", systemImage: "play.fill")
                     .frame(minWidth: 180)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.extraLarge)
+            SavedLogBadge(session: session)
             exportStatusText
             Spacer(minLength: 0)
         }
@@ -87,7 +95,7 @@ struct ContentView: View {
 
     private var stage: some View {
         VStack(spacing: 28) {
-            Text(session.song.title)
+            Text(session.currentSongTitle)
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
@@ -122,17 +130,19 @@ struct ContentView: View {
     private var finished: some View {
         VStack(spacing: 24) {
             Spacer(minLength: 0)
-            Text("That's the song")
+            Text("That's the set")
                 .font(.system(size: 36, weight: .medium, design: .serif))
-            Text(session.song.title)
+            Text("Sing again?")
                 .foregroundStyle(.secondary)
-            Button(action: { session.start() }) {
+            SetLengthPicker(session: session)
+            Button(action: startShow) {
                 Label("Play again", systemImage: "play.fill")
                     .frame(minWidth: 180)
             }
             .buttonStyle(.borderedProminent)
             .buttonBorderShape(.capsule)
             .controlSize(.large)
+            SavedLogBadge(session: session)
             exportStatusText
             Spacer(minLength: 0)
         }
@@ -147,6 +157,24 @@ struct ContentView: View {
         }
     }
 
+    /// Opens the immersive stage (if it isn't already) and starts the song.
+    private func startShow() {
+        Task { @MainActor in
+            if appModel.immersiveSpaceState == .closed {
+                appModel.immersiveSpaceState = .inTransition
+                switch await openImmersiveSpace(id: appModel.immersiveSpaceID) {
+                case .opened:
+                    break
+                case .userCancelled, .error:
+                    appModel.immersiveSpaceState = .closed
+                @unknown default:
+                    appModel.immersiveSpaceState = .closed
+                }
+            }
+            session.start()
+        }
+    }
+
     private func beginExport() {
         guard !session.entries.isEmpty else { return }
         exportText = session.logText()
@@ -157,4 +185,44 @@ struct ContentView: View {
 #Preview(windowStyle: .automatic) {
     ContentView()
         .environment(AppModel())
+}
+
+/// Lets the singer pick a 1, 3 or 5 minute set before starting.
+struct SetLengthPicker: View {
+    let session: KaraokeSession
+
+    var body: some View {
+        Picker("Set length", selection: Binding(get: { session.length }, set: { session.choose($0) })) {
+            ForEach(SetLength.allCases) { length in
+                Text(length.label).tag(length)
+            }
+        }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 320)
+    }
+}
+
+/// Confirms where the run's log was saved automatically.
+struct SavedLogBadge: View {
+    let session: KaraokeSession
+
+    var body: some View {
+        if let url = session.savedLogURL {
+            VStack(spacing: 4) {
+                Label("Log saved", systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.green)
+                Text(SessionLogFile.filesLocation)
+                    .font(.caption)
+                Text(url.lastPathComponent)
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+            }
+            .multilineTextAlignment(.center)
+        } else if let error = session.saveError {
+            Label("Couldn't save log: \(error)", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption)
+                .foregroundStyle(.orange)
+        }
+    }
 }

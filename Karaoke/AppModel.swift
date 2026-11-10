@@ -18,4 +18,7 @@ class AppModel {
         case open
     }
     var immersiveSpaceState = ImmersiveSpaceState.closed
+
+    /// Shared between the window and the immersive stage.
+    let session = KaraokeSession()
 }

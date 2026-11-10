@@ -11,9 +11,48 @@ import Testing
 
 struct KaraokeTests {
 
-    @Test func songListIsTwinkleTwinkle() {
-        #expect(SongBank.all.map(\.title) == ["Twinkle, Twinkle, Little Star"])
+    @Test func songBankHasThePublicDomainSongs() {
+        #expect(SongBank.all.map(\.title) == [
+            "Twinkle, Twinkle, Little Star",
+            "Mary Had a Little Lamb",
+            "Row, Row, Row Your Boat",
+            "London Bridge Is Falling Down",
+        ])
         #expect(SongBank.all.contains { $0.title.lowercased().contains("baby") } == false)
+    }
+
+    @Test(arguments: SetLength.allCases)
+    func setlistRoughlyMatchesTheChosenLength(length: SetLength) {
+        let set = SongBank.setlist(for: length)
+        #expect(abs(set.duration - length.seconds) <= 15)
+        #expect(set.lines.first?.songTitle == "Twinkle, Twinkle, Little Star")
+        #expect(set.lines.map(\.id) == Array(0..<set.lines.count))
+        #expect(SongBank.songs(for: length).count >= 2)
+    }
+
+    @Test func longerSetsHaveMoreSongs() {
+        let counts = SetLength.allCases.map { SongBank.songs(for: $0).count }
+        #expect(counts == counts.sorted())
+        #expect(counts[0] < counts[2])
+    }
+
+    @Test @MainActor func setLogsEachSongAsItStarts() {
+        let session = KaraokeSession(length: .oneMinute, logDirectory: tempLogs())
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        session.start(at: start, playsAudio: false)
+        session.refresh(at: start.addingTimeInterval(session.song.duration + 1))
+
+        let songStarts = session.entries.filter { $0.line.contains("song_start") }
+        #expect(songStarts.count == SongBank.songs(for: .oneMinute).count)
+        #expect(songStarts[1].line.contains("song_start Mary Had a Little Lamb"))
+        #expect(session.phase == .finished)
+    }
+
+    @Test @MainActor func choosingALengthRebuildsTheSet() {
+        let session = KaraokeSession(logDirectory: tempLogs())
+        session.choose(.fiveMinutes)
+        #expect(session.length == .fiveMinutes)
+        #expect(session.song.title == "5 min set")
     }
 
     @Test func twinkleHasSixLyricLines() {
@@ -39,7 +78,7 @@ struct KaraokeTests {
     }
 
     @Test @MainActor func startingLogsTheSongAndFirstLine() {
-        let session = KaraokeSession()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         session.start(at: start, playsAudio: false)
 
@@ -51,7 +90,7 @@ struct KaraokeTests {
     }
 
     @Test @MainActor func eachNewLyricIsLoggedOnce() {
-        let session = KaraokeSession()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         session.start(at: start, playsAudio: false)
 
@@ -64,7 +103,7 @@ struct KaraokeTests {
     }
 
     @Test @MainActor func finishingLogsTheEndOfTheSong() {
-        let session = KaraokeSession()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         session.start(at: start, playsAudio: false)
 
@@ -78,7 +117,7 @@ struct KaraokeTests {
     }
 
     @Test @MainActor func stoppingEarlyLogsSessionStop() {
-        let session = KaraokeSession()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         session.start(at: start, playsAudio: false)
         session.stop(at: start.addingTimeInterval(2))
@@ -89,7 +128,7 @@ struct KaraokeTests {
     }
 
     @Test @MainActor func savedLogContainsTheSession() {
-        let session = KaraokeSession()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         session.start(at: start, playsAudio: false)
         session.refresh(at: start.addingTimeInterval(24))
@@ -107,4 +146,53 @@ struct KaraokeTests {
         #expect(text.contains("song_finished"))
         #expect(text.contains(SessionLogFormat.stamp(generated)))
     }
+
+    @Test @MainActor func finishingSavesATimestampedLogFile() throws {
+        let folder = tempLogs()
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: folder)
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        session.start(at: start, playsAudio: false)
+        #expect(session.savedLogURL == nil)
+
+        let end = start.addingTimeInterval(25)
+        session.refresh(at: end)
+
+        let url = try #require(session.savedLogURL)
+        #expect(url.lastPathComponent == SessionLogFile.fileName(for: end))
+        #expect(url.lastPathComponent.hasPrefix("karaoke-log_"))
+        #expect(url.pathExtension == "txt")
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(text.contains("session_start"))
+        #expect(text.contains("lyric_line 6"))
+        #expect(text.contains("song_finished"))
+    }
+
+    @Test @MainActor func stoppingEarlySavesOnlyThatRun() throws {
+        let session = KaraokeSession(song: SongBank.twinkle, logDirectory: tempLogs())
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        session.start(at: start, playsAudio: false)
+        session.refresh(at: start.addingTimeInterval(25))
+
+        let second = start.addingTimeInterval(60)
+        session.start(at: second, playsAudio: false)
+        #expect(session.savedLogURL == nil)
+        session.stop(at: second.addingTimeInterval(3))
+
+        let url = try #require(session.savedLogURL)
+        let text = try String(contentsOf: url, encoding: .utf8)
+        #expect(text.contains("session_stop"))
+        #expect(text.contains("song_finished") == false)
+        #expect(text.components(separatedBy: "session_start").count == 2)
+    }
+
+    @Test func logFileNameUsesDateAndTime() {
+        var parts = DateComponents()
+        (parts.year, parts.month, parts.day, parts.hour, parts.minute, parts.second) = (2026, 11, 7, 16, 56, 35)
+        let date = Calendar.current.date(from: parts)!
+        #expect(SessionLogFile.fileName(for: date) == "karaoke-log_2026-11-07_16-56-35.txt")
+    }
+}
+
+private func tempLogs() -> URL {
+    FileManager.default.temporaryDirectory.appendingPathComponent("karaoke-tests-\(UUID().uuidString)")
 }

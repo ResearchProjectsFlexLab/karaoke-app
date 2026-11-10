@@ -36,6 +36,31 @@ enum SessionLogFormat {
     }()
 }
 
+/// Writes each finished or stopped run to the app's Documents folder,
+/// which the Files app shows under On My Apple Vision Pro › Karaoke.
+enum SessionLogFile {
+    static let filesLocation = "Files › On My Apple Vision Pro › Karaoke"
+
+    static func fileName(for date: Date) -> String {
+        "karaoke-log_\(fileStamp.string(from: date)).txt"
+    }
+
+    @discardableResult
+    static func save(_ text: String, at date: Date, in directory: URL = .documentsDirectory) throws -> URL {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let url = directory.appendingPathComponent(fileName(for: date))
+        try Data(text.utf8).write(to: url, options: .atomic)
+        return url
+    }
+
+    private static let fileStamp: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        return formatter
+    }()
+}
+
 enum SessionLogger {
     private static let logger = Logger(subsystem: "FlexLab.Karaoke", category: "SessionLog")
 

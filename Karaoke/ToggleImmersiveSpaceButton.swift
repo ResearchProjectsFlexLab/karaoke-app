@@ -49,7 +49,8 @@ struct ToggleImmersiveSpaceButton: View {
                 }
             }
         } label: {
-            Text(appModel.immersiveSpaceState == .open ? "Hide Immersive Space" : "Show Immersive Space")
+            Label(appModel.immersiveSpaceState == .open ? "Leave Stage" : "Enter Stage",
+                  systemImage: appModel.immersiveSpaceState == .open ? "xmark" : "music.mic")
         }
         .disabled(appModel.immersiveSpaceState == .inTransition)
         .animation(.none, value: 0)
