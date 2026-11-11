@@ -19,7 +19,7 @@ struct ImmersiveView: View {
 
             let board = Entity()
             board.components.set(ViewAttachmentComponent(rootView: LyricBoard(appModel: appModel)))
-            board.scale = SIMD3(repeating: 2.4)
+            board.scale = SIMD3<Float>(repeating: 2.4)
             rig.boardAnchor.addChild(board)
 
             let session = appModel.session
@@ -41,13 +41,14 @@ enum StageAnimator {
         // Keep the scene calm during baseline and recovery: no beams, no pulsing floor.
         let isResting = phase == .baseline || phase == .recovery
 
-        rig.starField.orientation = simd_quatf(angle: time * 0.004, axis: [0, 1, 0])
+        rig.starField.orientation = simd_quatf(angle: time * 0.004, axis: SIMD3<Float>(0, 1, 0))
 
         // Twinkle a rolling subset of stars each frame.
         for (index, star) in rig.stars.enumerated() where index % 3 == 0 {
-            let phase = Float(index) * 1.7
-            let base = 0.6 + Float(index % 7) * 0.15
-            star.scale = SIMD3(repeating: base * (0.7 + 0.3 * sin(time * 2.2 + phase)))
+            let phase: Float = Float(index) * 1.7
+            let base: Float = 0.6 + Float(index % 7) * 0.15
+            let twinkle: Float = 0.7 + 0.3 * sin(time * 2.2 + phase)
+            star.scale = SIMD3<Float>(repeating: base * twinkle)
         }
 
         let speed: Float = isPlaying ? 1.4 : 0.5
@@ -55,17 +56,19 @@ enum StageAnimator {
         for (index, beam) in rig.beams.enumerated() {
             beam.isEnabled = !isResting
             guard !isResting else { continue }
-            let offset = Float(index) * 1.3
-            let roll = sin(time * speed + offset) * swing
-            let pitch = -0.12 + cos(time * speed * 0.7 + offset) * swing * 0.5
-            beam.orientation = simd_quatf(angle: roll, axis: [0, 0, 1]) * simd_quatf(angle: pitch, axis: [1, 0, 0])
+            let offset: Float = Float(index) * 1.3
+            let roll: Float = sin(time * speed + offset) * swing
+            let pitch: Float = -0.12 + cos(time * speed * 0.7 + offset) * swing * 0.5
+            beam.orientation = simd_quatf(angle: roll, axis: SIMD3<Float>(0, 0, 1)) * simd_quatf(angle: pitch, axis: SIMD3<Float>(1, 0, 0))
         }
 
         let beat: Float = isPlaying ? 4 : 1.2
         for (index, tile) in rig.tiles.enumerated() {
-            let lift = isResting ? 0 : max(0, sin(time * beat + Float(index) * 0.9))
-            tile.position.y = 0.006 + (isPlaying ? lift * 0.012 : 0)
-            tile.scale = SIMD3(1, 1 + lift * 2, 1)
+            let wave: Float = sin(time * beat + Float(index) * 0.9)
+            let lift: Float = isResting ? Float(0) : max(Float(0), wave)
+            let bounce: Float = isPlaying ? lift * 0.012 : Float(0)
+            tile.position.y = 0.006 + bounce
+            tile.scale = SIMD3<Float>(1, 1 + lift * 2, 1)
         }
     }
 }

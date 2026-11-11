@@ -15,7 +15,7 @@ Every song is public domain and played as simple tones; no audio is recorded.
 
 ## Run it on a Vision Pro
 
-You need a Mac with **Xcode 26.2 or newer**, and a Vision Pro on **visionOS 26.2 or newer**.
+You need a Mac with **Xcode 26 or newer**, and a Vision Pro (original or M5) on **visionOS 26 or newer**.
 
 1. Download the project:
    `git clone https://github.com/ResearchProjectsFlexLab/karaoke-app.git`
