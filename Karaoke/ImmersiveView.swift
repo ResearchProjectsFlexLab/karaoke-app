@@ -22,12 +22,36 @@ struct ImmersiveView: View {
             board.scale = SIMD3<Float>(repeating: 2.4)
             rig.boardAnchor.addChild(board)
 
+            // Baseline and recovery: the moonlit lake from the Follow the Snake app, under its
+            // night sky, with the same gentle breathing words. The stage fades out meanwhile.
+            let restScene = Entity()
+            restScene.addChild(LakeScene.makeSkyDome())
+            restScene.addChild(LakeScene.makeStars(count: 700, radius: 30))
+            let lake = LakeScene()
+            restScene.addChild(lake.root)
+            restScene.components.set(OpacityComponent(opacity: 0))
+            restScene.isEnabled = false
+            content.add(restScene)
+
+            let restHUD = Entity()
+            restHUD.position = [0, 0.95, -2.6]
+            restHUD.components.set(ViewAttachmentComponent(rootView: RestHUD(session: appModel.session)))
+            restHUD.isEnabled = false
+            content.add(restHUD)
+
             let session = appModel.session
             var time: Float = 0
             animation = content.subscribe(to: SceneEvents.Update.self) { event in
+                let dt = Float(min(event.deltaTime, 0.1))
                 time += Float(event.deltaTime)
-                session.refresh(at: .now)
-                StageAnimator.step(rig, time: time, phase: session.phase)
+                let now = Date.now
+                session.refresh(at: now)
+                let resting = session.isResting
+                StageAnimator.fade(rig.root, toward: resting ? 0 : 1, dt: dt)
+                StageAnimator.fade(restScene, toward: resting ? 1 : 0, dt: dt)
+                restHUD.isEnabled = resting
+                if rig.root.isEnabled { StageAnimator.step(rig, time: time, phase: session.phase) }
+                if restScene.isEnabled { lake.update(session: session, now: now) }
             }
         }
     }
@@ -36,6 +60,15 @@ struct ImmersiveView: View {
 /// Per-frame motion for the stage: drifting stars, twinkling, swaying beams and a pulsing dance floor.
 @MainActor
 enum StageAnimator {
+    /// Cross-fades the stage and the lake, as the Follow the Snake app does between its scenes.
+    static func fade(_ entity: Entity, toward target: Float, dt: Float) {
+        let current: Float = entity.components[OpacityComponent.self]?.opacity ?? 1
+        let step: Float = dt * 1.5
+        let next: Float = current < target ? min(target, current + step) : max(target, current - step)
+        entity.components.set(OpacityComponent(opacity: next))
+        entity.isEnabled = next > 0.001
+    }
+
     static func step(_ rig: StageRig, time: Float, phase: KaraokeSession.Phase) {
         let isPlaying = phase == .playing
         // Keep the scene calm during baseline and recovery: no beams, no pulsing floor.
@@ -69,6 +102,34 @@ enum StageAnimator {
             let bounce: Float = isPlaying ? lift * 0.012 : Float(0)
             tile.position.y = 0.006 + bounce
             tile.scale = SIMD3<Float>(1, 1 + lift * 2, 1)
+        }
+    }
+}
+
+/// Gentle breathing words for the first few breaths of each rest, then only a faint progress line.
+/// Same as the Follow the Snake app.
+struct RestHUD: View {
+    let session: KaraokeSession
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { context in
+            let elapsed = session.restElapsed(at: context.date)
+            let showWords = elapsed < KaraokeSession.breathCycle * 3
+            VStack(spacing: 16) {
+                Text(session.phase == .recovery ? "Recovery — relax and breathe" : "Baseline — relax and breathe")
+                    .font(.title2)
+                    .opacity(elapsed < 6 ? 0.85 : 0)
+                Text(session.isInhaling(at: context.date) ? "Breathe in…" : "Breathe out…")
+                    .font(.system(size: 40, weight: .light, design: .rounded))
+                    .opacity(showWords ? 0.8 : 0)
+                ProgressView(value: session.restProgress(at: context.date))
+                    .tint(.teal)
+                    .frame(width: 320)
+                    .opacity(0.35)
+            }
+            .foregroundStyle(.white)
+            .animation(.easeInOut(duration: 1.2), value: showWords)
+            .animation(.easeInOut(duration: 0.8), value: session.isInhaling(at: context.date))
         }
     }
 }

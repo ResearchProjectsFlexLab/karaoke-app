@@ -27,6 +27,11 @@ final class KaraokeSession {
     }
 
     nonisolated static let defaultRestDuration: TimeInterval = 60
+    /// Normal resting breathing (12 per minute) for the paced rest scene, as in the Follow the Snake app.
+    /// Not slow paced breathing, which would raise HRV and stop being a resting baseline.
+    nonisolated static let inhaleSeconds: TimeInterval = 2
+    nonisolated static let exhaleSeconds: TimeInterval = 3
+    nonisolated static var breathCycle: TimeInterval { inhaleSeconds + exhaleSeconds }
 
     private(set) var song: Song
     private(set) var length: SetLength
@@ -185,7 +190,39 @@ final class KaraokeSession {
         phase = restPhase
         restStartedAt = date
         restRemaining = duration
-        record("\(restPhase == .baseline ? "baseline" : "recovery")_start \(Int(duration))s", at: date)
+        let breathing = "breathing_per_min=\(Int(60 / Self.breathCycle)) inhale_s=\(Int(Self.inhaleSeconds)) exhale_s=\(Int(Self.exhaleSeconds)) scene=moonlit_lake"
+        record("\(restPhase == .baseline ? "baseline" : "recovery")_start \(Int(duration))s \(breathing)", at: date)
+    }
+
+    // MARK: - Breathing guide (baseline and recovery)
+
+    var isResting: Bool { phase == .baseline || phase == .recovery }
+
+    /// Seconds into the current baseline or recovery.
+    func restElapsed(at now: Date = .now) -> TimeInterval {
+        guard isResting, let restStartedAt else { return 0 }
+        return max(0, now.timeIntervalSince(restStartedAt))
+    }
+
+    /// 0...1 through the current baseline or recovery.
+    func restProgress(at now: Date = .now) -> Double {
+        let total = phase == .baseline ? baselineDuration : recoveryDuration
+        guard isResting, total > 0 else { return 0 }
+        return min(1, restElapsed(at: now) / total)
+    }
+
+    /// Breathing guide: 0 = fully out, 1 = fully in. Eased so the motion has no sudden changes.
+    func breath(at now: Date = .now) -> Float {
+        let t = restElapsed(at: now).truncatingRemainder(dividingBy: Self.breathCycle)
+        let x: Double = t < Self.inhaleSeconds
+            ? t / Self.inhaleSeconds
+            : 1 - (t - Self.inhaleSeconds) / Self.exhaleSeconds
+        return Float(x * x * (3 - 2 * x))
+    }
+
+    /// True while the guide is in the breathing-in part of the cycle.
+    func isInhaling(at now: Date = .now) -> Bool {
+        restElapsed(at: now).truncatingRemainder(dividingBy: Self.breathCycle) < Self.inhaleSeconds
     }
 
     /// Returns true once the current rest period is over.
